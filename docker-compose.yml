@@ -15,6 +15,29 @@ services:
       - POSTGRES_USER=zkp2p
       - POSTGRES_PASSWORD=password
 
+  zkp2p-indexer:
+    container_name: zkp2p-indexer
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    ports:
+      - 13072:13072
+    volumes:
+      - ./abis:/app/abis
+      - ./src:/app/src
+      - ./tsconfig.json:/app/tsconfig.json
+      - ./package.json:/app/package.json
+      - ./package-lock.json:/app/package-lock.json
+      - ./ponder.config.ts:/app/ponder.config.ts
+      - ./ponder-env.ts:/app/ponder-env.ts
+      - ./ponder.schema.ts:/app/ponder.schema.ts
+    networks:
+      - zkp2p
+    environment:
+      - PONDER_RPC_URL_369=https://rpc.pulsechain.com
+      - DATABASE_URL=postgres://zkp2p:password@zkp2p-indexer-postgres/zkp2p
+      - DATABASE_SCHEMA=zkp2p
+
 networks:
   zkp2p:
     driver: bridge
