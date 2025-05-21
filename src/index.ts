@@ -301,12 +301,12 @@ ponder.on("Escrow:DepositCurrencyAdded", async ({ event, context }) => {
         transactionId: transactionOrderId,
         participantId: deposit.participantId,
       })
-      const rateInsertion = context.db.insert(schema.conversionRate).values({
-        conversionRateId,
-        ...conversionRateInputs,
-      }).onConflictDoNothing()
       await Promise.all([
-        rateInsertion,
+        context.db.insert(schema.conversionRate).values({
+          conversionRateId,
+          rate: event.args.conversionRate,
+          ...conversionRateInputs,
+        }).onConflictDoNothing(),
         context.db.update(schema.deposit, {
           depositId: event.args.depositId,
         }).set({
@@ -323,13 +323,12 @@ ponder.on("Escrow:DepositCurrencyAdded", async ({ event, context }) => {
           participantActionId,
         }),
       ])
-      const rate = await rateInsertion
       await logStats(context, {
         timestamp: event.block.timestamp,
         action: 'deposit',
         amount: deposit.remaining,
         currency: deposit.token,
-        verifier: rate.verifier,
+        verifier: event.args.verifier,
       })
     })
   ])
