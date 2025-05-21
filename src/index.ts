@@ -285,13 +285,14 @@ ponder.on("Escrow:DepositConversionRateUpdated", async ({ event, context }) => {
 ponder.on("Escrow:DepositCurrencyAdded", async ({ event, context }) => {
   const logOrderId = orderId.log({ event, context })
   const transactionOrderId = orderId.transaction({ event, context })
-  const conversionRateId = ids.conversionRate({
+  const conversionRateInputs = {
     chainId: context.network.chainId,
     currency: event.args.currency,
     verifier: event.args.verifier,
     depositId: event.args.depositId,
     conversionRateChangeId: 0,
-  })
+  } as const
+  const conversionRateId = ids.conversionRate(conversionRateInputs)
   await Promise.all([
     upsertBlock(event, context),
     upsertTransaction(event, context),
@@ -302,12 +303,8 @@ ponder.on("Escrow:DepositCurrencyAdded", async ({ event, context }) => {
       })
       const rateInsertion = context.db.insert(schema.conversionRate).values({
         conversionRateId,
-        depositId: event.args.depositId,
-        conversionRateChangeId: 0,
-        rate: event.args.conversionRate,
-        currency: event.args.currency,
-        verifier: event.args.verifier,
-      })
+        ...conversionRateInputs,
+      }).onConflictDoNothing()
       await Promise.all([
         rateInsertion,
         context.db.update(schema.deposit, {
