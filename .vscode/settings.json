@@ -1,0 +1,4 @@
+{
+  "eslint.lintTask.options": "--config .eslintrc.json .",
+  "eslint.lintTask.enable": true
+}
