@@ -1,4 +1,4 @@
-import { onchainTable, relations } from "ponder";
+import { onchainEnum, onchainTable, relations } from "ponder";
 
 export const block = onchainTable("block", (t) => ({
   orderId: t.hex().primaryKey(),
@@ -23,15 +23,15 @@ export const transactionReferences = relations(transaction, ({ one, many }) => (
     references: [block.orderId],
   }),
   deposits: many(deposit),
-  depositReceived: many(depositReceived),
-  depositWithdrawn: many(depositWithdrawn),
-  depositClosed: many(depositClosed),
-  depositConversionRateUpdated: many(depositConversionRateUpdated),
-  depositCurrencyAdded: many(depositCurrencyAdded),
-  intentSignaled: many(intentSignaled),
-  intentPruned: many(intentPruned),
-  intentFulfilled: many(intentFulfilled),
-  participantActions: many(participantAction),
+  depositReceiveds: many(depositReceived),
+  depositWithdrawns: many(depositWithdrawn),
+  depositCloseds: many(depositClosed),
+  depositCurrencyAddeds: many(depositCurrencyAdded),
+  depositConversionRateUpdateds: many(depositConversionRateUpdated),
+  intentSignaleds: many(intentSignaled),
+  intentPruneds: many(intentPruned),
+  intentFulfilleds: many(intentFulfilled),
+  actions: many(action),
 }));
 
 export const participant = onchainTable("participant", (t) => ({
@@ -46,43 +46,52 @@ export const participantReferences = relations(participant, ({ many }) => ({
   depositWithdrawn: many(depositWithdrawn),
 }));
 
-export const participantAction = onchainTable("participantAction", (t) => ({
-  actionId: t.hex().notNull().primaryKey(),
+export const action = onchainTable("action", (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  logId: t.hex().notNull(), // log order id - how everything is linked together
   participantId: t.hex().notNull(),
   transactionId: t.hex().notNull(),
+  depositId: t.bigint().notNull(),
 }));
 
-export const participantActionReferences = relations(participantAction, ({ one, many }) => ({
+export const actionReferences = relations(action, ({ one, many }) => ({
   participant: one(participant, {
-    fields: [participantAction.participantId],
+    fields: [action.participantId],
     references: [participant.participantId],
   }),
   transaction: one(transaction, {
-    fields: [participantAction.transactionId],
+    fields: [action.transactionId],
     references: [transaction.orderId],
   }),
-  deposit: many(deposit),
-  depositReceived: many(depositReceived),
-  depositWithdrawn: many(depositWithdrawn),
-  depositClosed: many(depositClosed),
-  depositConversionRateUpdated: many(depositConversionRateUpdated),
-  depositCurrencyAdded: many(depositCurrencyAdded),
-  intentSignaled: many(intentSignaled),
-  intentPruned: many(intentPruned),
-  intentFulfilled: many(intentFulfilled),
+  deposit: one(deposit, {
+    fields: [action.depositId],
+    references: [deposit.depositId],
+  }),
+  depositReceiveds: many(depositReceived),
+  depositWithdrawns: many(depositWithdrawn),
+  depositCloseds: many(depositClosed),
+  depositCurrencyAddeds: many(depositCurrencyAdded), // the event
+  depositConversionRateUpdateds: many(depositConversionRateUpdated),
+  intentSignaleds: many(intentSignaled),
+  intentPruneds: many(intentPruned),
+  intentFulfilleds: many(intentFulfilled),
 }));
+
+export const status = onchainEnum('status', ['active', 'underfunded', 'closed', 'withdrawn'])
 
 export const deposit = onchainTable("deposit", (t) => ({
   depositId: t.bigint().notNull().primaryKey(),
+  orderId: t.hex().notNull(),
+  logId: t.hex().notNull(),
   transactionId: t.hex().notNull(),
   token: t.hex().notNull(),
   participantId: t.hex().notNull(),
-  participantActionId: t.hex().notNull(),
   deposited: t.bigint().notNull(),
   remaining: t.bigint().notNull(),
   minAmount: t.bigint().notNull(),
   maxAmount: t.bigint().notNull(),
-  conversionRateId: t.hex(),
+  depositConversionRateCurrencies: t.hex().array().notNull(),
+  depositConversionRateVerifiers: t.hex().array().notNull(),
   // a deposit has an implicit state:
   // active: the deposit is still open
   // drained: the deposit is drained of funds but not yet withdrawn/closed
@@ -90,7 +99,7 @@ export const deposit = onchainTable("deposit", (t) => ({
   // - applied by the deposit or the verifier's terms
   // withdrawn: the deposit has been revoked by the owner
   // closed: the deposit is closed by successfully fulfilling the intent
-  status: t.text().notNull(),
+  status: status('status').notNull(),
 }));
 
 export const depositReferences = relations(deposit, ({ one, many }) => ({
@@ -98,43 +107,96 @@ export const depositReferences = relations(deposit, ({ one, many }) => ({
     fields: [deposit.transactionId],
     references: [transaction.orderId],
   }),
-  participantAction: one(participantAction, {
-    fields: [deposit.participantActionId],
-    references: [participantAction.actionId],
-  }),
   owner: one(participant, {
     fields: [deposit.participantId],
     references: [participant.participantId],
   }),
-  conversionRate: one(conversionRate, {
-    fields: [deposit.conversionRateId],
-    references: [conversionRate.conversionRateId],
-  }),
-  historicalConversionRates: many(conversionRate),
+  depositCurrencyAddeds: many(depositCurrencyAdded),
+  depositVerifierAddeds: many(depositVerifierAdded),
+  depositConversionRateUpdateds: many(depositConversionRateUpdated),
+  actions: many(action),
+  depositReceiveds: many(depositReceived),
+  depositWithdrawns: many(depositWithdrawn),
+  depositCloseds: many(depositClosed),
+  intentSignaleds: many(intentSignaled),
+  intentPruneds: many(intentPruned),
+  intentFulfilleds: many(intentFulfilled),
+  depositDeltas: many(depositDelta),
+  depositVerifiers: many(depositVerifierAdded),
 }));
 
-export const conversionRate = onchainTable("conversionRate", (t) => ({
-  conversionRateId: t.hex().notNull().primaryKey(),
-  conversionRateChangeId: t.integer().notNull(),
+export const depositDelta = onchainTable("depositDelta", (t) => ({
+  orderId: t.hex().primaryKey(),
+  logId: t.hex().notNull(),
   depositId: t.bigint().notNull(),
-  rate: t.bigint().notNull(),
+  amountBefore: t.bigint().notNull(),
+  delta: t.bigint().notNull(),
+  amountAfter: t.bigint().notNull(),
+}));
+
+export const depositDeltaReferences = relations(depositDelta, ({ one }) => ({
+  deposit: one(deposit, {
+    fields: [depositDelta.depositId],
+    references: [deposit.depositId],
+  }),
+  action: one(action, {
+    fields: [depositDelta.logId],
+    references: [action.logId],
+  }),
+}));
+
+// a conversion rate is a rate for a specific currency, verifier, and deposit
+// it is unique for each update to the rate track, so if you change
+// from 1.01 to 1.02, to 1.01, you will have three rates, and the conversionRateId
+// will be different for each rate
+export const depositConversionRateUpdated = onchainTable("depositConversionRateUpdated", (t) => ({
+  depositConversionRateUpdatedId: t.hex().primaryKey(),
+  orderId: t.hex().notNull(),
+  logId: t.hex().notNull(),
+  transactionId: t.hex().notNull(),
+  // shared between all updates for a given deposit, currency, verifier combo
+  depositVerifierAddedId: t.hex().notNull(),
+  depositCurrencyAddedId: t.hex().notNull(),
+  // inputs to track
   currency: t.hex().notNull(),
   verifier: t.hex().notNull(),
+  depositId: t.bigint().notNull(),
+  // specific input to this rate
+  changeId: t.integer().notNull(),
+  // actual value!
+  value: t.bigint().notNull(),
+  active: t.boolean().notNull(),
 }));
 
-export const conversionRateReferences = relations(conversionRate, ({ one }) => ({
+export const depositConversionRateUpdatedReferences = relations(depositConversionRateUpdated, ({ one }) => ({
   deposit: one(deposit, {
-    fields: [conversionRate.depositId],
+    fields: [depositConversionRateUpdated.depositId],
     references: [deposit.depositId],
+  }),
+  depositVerifierAdded: one(depositVerifierAdded, {
+    fields: [depositConversionRateUpdated.depositVerifierAddedId],
+    references: [depositVerifierAdded.depositVerifierAddedId],
+  }),
+  depositCurrencyAdded: one(depositCurrencyAdded, {
+    fields: [depositConversionRateUpdated.depositCurrencyAddedId],
+    references: [depositCurrencyAdded.depositCurrencyAddedId],
+  }),
+  transaction: one(transaction, {
+    fields: [depositConversionRateUpdated.transactionId],
+    references: [transaction.orderId],
+  }),
+  action: one(action, {
+    fields: [depositConversionRateUpdated.logId],
+    references: [action.logId],
   }),
 }));
 
 export const depositReceived = onchainTable("depositReceived", (t) => ({
-  orderId: t.hex().primaryKey(),
+  depositId: t.bigint().primaryKey(),
+  orderId: t.hex().notNull(),
+  logId: t.hex().notNull(),
   token: t.hex().notNull(),
   participantId: t.hex().notNull(),
-  participantActionId: t.hex().notNull(),
-  depositId: t.bigint().notNull(),
   amount: t.bigint().notNull(),
   transactionId: t.hex().notNull(),
 }));
@@ -152,18 +214,22 @@ export const depositReceivedReferences = relations(depositReceived, ({ one }) =>
     fields: [depositReceived.participantId],
     references: [participant.participantId],
   }),
-  participantAction: one(participantAction, {
-    fields: [depositReceived.participantActionId],
-    references: [participantAction.actionId],
+  action: one(action, {
+    fields: [depositReceived.logId],
+    references: [action.logId],
+  }),
+  depositDelta: one(depositDelta, {
+    fields: [depositReceived.logId],
+    references: [depositDelta.logId],
   }),
 }));
 
 export const depositWithdrawn = onchainTable("depositWithdrawn", (t) => ({
   orderId: t.hex().primaryKey(),
+  logId: t.hex().notNull(),
   depositId: t.bigint().notNull(),
   participantId: t.hex().notNull(),
-  participantActionId: t.hex().notNull(),
-  amount: t.bigint().notNull(), // amount withdrawn
+  amount: t.bigint().notNull(), // amount sent to owner during withdrawal
   transactionId: t.hex().notNull(),
 }));
 
@@ -176,21 +242,25 @@ export const depositWithdrawnReferences = relations(depositWithdrawn, ({ one }) 
     fields: [depositWithdrawn.participantId],
     references: [participant.participantId],
   }),
-  participantAction: one(participantAction, {
-    fields: [depositWithdrawn.participantActionId],
-    references: [participantAction.actionId],
+  action: one(action, {
+    fields: [depositWithdrawn.logId],
+    references: [action.logId],
   }),
   transaction: one(transaction, {
     fields: [depositWithdrawn.transactionId],
     references: [transaction.orderId],
   }),
+  depositDelta: one(depositDelta, {
+    fields: [depositWithdrawn.logId],
+    references: [depositDelta.logId],
+  }),
 }));
 
 export const depositClosed = onchainTable("depositClosed", (t) => ({
-  orderId: t.hex().primaryKey(),
-  depositId: t.bigint().notNull(),
+  orderId: t.hex().notNull(),
+  logId: t.hex().notNull(),
+  depositId: t.bigint().primaryKey(),
   participantId: t.hex().notNull(),
-  participantActionId: t.hex().notNull(),
   transactionId: t.hex().notNull(),
 }));
 
@@ -207,53 +277,26 @@ export const depositClosedReferences = relations(depositClosed, ({ one }) => ({
     fields: [depositClosed.transactionId],
     references: [transaction.orderId],
   }),
-  participantAction: one(participantAction, {
-    fields: [depositClosed.participantActionId],
-    references: [participantAction.actionId],
-  }),
-}));
-
-export const depositConversionRateUpdated = onchainTable("depositConversionRateUpdated", (t) => ({
-  orderId: t.hex().primaryKey(),
-  conversionRateId: t.hex().notNull(),
-  transactionId: t.hex().notNull(),
-  depositId: t.bigint().notNull(),
-  currency: t.hex().notNull(),
-  verifier: t.hex().notNull(),
-  participantActionId: t.hex().notNull(),
-}));
-
-export const depositConversionRateUpdatedReferences = relations(depositConversionRateUpdated, ({ one }) => ({
-  transaction: one(transaction, {
-    fields: [depositConversionRateUpdated.transactionId],
-    references: [transaction.orderId],
-  }),
-  conversionRate: one(conversionRate, {
-    fields: [depositConversionRateUpdated.conversionRateId],
-    references: [conversionRate.conversionRateId],
-  }),
-  deposit: one(deposit, {
-    fields: [depositConversionRateUpdated.depositId],
-    references: [deposit.depositId],
-  }),
-  participantAction: one(participantAction, {
-    fields: [depositConversionRateUpdated.participantActionId],
-    references: [participantAction.actionId],
+  action: one(action, {
+    fields: [depositClosed.logId],
+    references: [action.logId],
   }),
 }));
 
 export const depositCurrencyAdded = onchainTable("depositCurrencyAdded", (t) => ({
-  orderId: t.hex().primaryKey(),
+  depositCurrencyAddedId: t.hex().primaryKey(),
+  orderId: t.hex().notNull(),
+  logId: t.hex().notNull(),
   depositId: t.bigint().notNull(),
   verifier: t.hex().notNull(),
   currency: t.hex().notNull(),
-  conversionRateId: t.hex().notNull(),
-  transactionId: t.hex().notNull(),
   participantId: t.hex().notNull(),
-  participantActionId: t.hex().notNull(),
+  depositVerifierAddedId: t.hex().notNull(),
+  currentDepositConversionRateUpdatedId: t.hex().notNull(),
+  transactionId: t.hex().notNull(),
 }));
 
-export const depositCurrencyAddedReferences = relations(depositCurrencyAdded, ({ one }) => ({
+export const depositCurrencyAddedReferences = relations(depositCurrencyAdded, ({ one, many }) => ({
   deposit: one(deposit, {
     fields: [depositCurrencyAdded.depositId],
     references: [deposit.depositId],
@@ -262,32 +305,80 @@ export const depositCurrencyAddedReferences = relations(depositCurrencyAdded, ({
     fields: [depositCurrencyAdded.transactionId],
     references: [transaction.orderId],
   }),
-  conversionRate: one(conversionRate, {
-    fields: [depositCurrencyAdded.conversionRateId],
-    references: [conversionRate.conversionRateId],
+  depositVerifierAdded: one(depositVerifierAdded, {
+    fields: [depositCurrencyAdded.depositVerifierAddedId],
+    references: [depositVerifierAdded.depositVerifierAddedId],
   }),
+  currentDepositConversionRateUpdated: one(depositConversionRateUpdated, {
+    fields: [depositCurrencyAdded.currentDepositConversionRateUpdatedId],
+    references: [depositConversionRateUpdated.depositConversionRateUpdatedId], // the current rate for this track
+  }),
+  depositConversionRateUpdateds: many(depositConversionRateUpdated),
   participant: one(participant, {
     fields: [depositCurrencyAdded.participantId],
     references: [participant.participantId],
   }),
-  participantAction: one(participantAction, {
-    fields: [depositCurrencyAdded.participantActionId],
-    references: [participantAction.actionId],
+  action: one(action, {
+    fields: [depositCurrencyAdded.logId],
+    references: [action.logId],
+  }),
+}));
+
+export const payeeDetails = onchainTable("payeeDetails", (t) => ({
+  payeeDetailsId: t.hex().primaryKey(), // hash of the payee details
+  intentGatingService: t.hex().notNull(),
+  payeeDetails: t.hex().notNull(),
+  data: t.hex().notNull(),
+}));
+
+export const depositVerifierAdded = onchainTable("depositVerifierAdded", (t) => ({
+  depositVerifierAddedId: t.hex().primaryKey(),
+  orderId: t.hex().notNull(),
+  logId: t.hex().notNull(),
+  depositId: t.bigint().notNull(),
+  verifier: t.hex().notNull(),
+  transactionId: t.hex().notNull(),
+  participantId: t.hex().notNull(),
+  payeeDetailsHash: t.hex().notNull(),
+  intentGatingService: t.hex().notNull(),
+}));
+
+export const depositVerifierAddedReferences = relations(depositVerifierAdded, ({ one, many }) => ({
+  deposit: one(deposit, {
+    fields: [depositVerifierAdded.depositId],
+    references: [deposit.depositId],
+  }),
+  participant: one(participant, {
+    fields: [depositVerifierAdded.participantId],
+    references: [participant.participantId],
+  }),
+  transaction: one(transaction, {
+    fields: [depositVerifierAdded.transactionId],
+    references: [transaction.orderId],
+  }),
+  depositCurrencyAdded: many(depositCurrencyAdded),
+  depositConversionRateUpdated: many(depositConversionRateUpdated),
+  payeeDetails: one(payeeDetails, {
+    fields: [depositVerifierAdded.payeeDetailsHash],
+    references: [payeeDetails.payeeDetailsId],
   }),
 }));
 
 export const intentSignaled = onchainTable("intentSignaled", (t) => ({
-  orderId: t.hex().primaryKey(),
-  intentHash: t.hex().notNull(),
+  intentHash: t.hex().notNull().primaryKey(),
+  orderId: t.hex().notNull(),
   depositId: t.bigint().notNull(),
   verifier: t.hex().notNull(),
   owner: t.hex().notNull(),
   to: t.hex().notNull(),
   amount: t.bigint().notNull(),
-  fiatCurrency: t.hex().notNull(),
-  conversionRateId: t.hex().notNull(),
+  currency: t.hex().notNull(),
+  depositVerifierAddedId: t.hex().notNull(),
+  depositCurrencyAddedId: t.hex().notNull(),
+  depositConversionRateUpdatedId: t.hex().notNull(),
   transactionId: t.hex().notNull(),
-  participantActionId: t.hex().notNull(),
+  logId: t.hex().notNull(),
+  participantId: t.hex().notNull(),
 }));
 
 export const intentSignaledReferences = relations(intentSignaled, ({ one }) => ({
@@ -299,22 +390,35 @@ export const intentSignaledReferences = relations(intentSignaled, ({ one }) => (
     fields: [intentSignaled.depositId],
     references: [deposit.depositId],
   }),
-  conversionRate: one(conversionRate, {
-    fields: [intentSignaled.conversionRateId],
-    references: [conversionRate.conversionRateId],
+  depositVerifierAdded: one(depositVerifierAdded, {
+    fields: [intentSignaled.depositVerifierAddedId],
+    references: [depositVerifierAdded.depositVerifierAddedId],
   }),
-  participantAction: one(participantAction, {
-    fields: [intentSignaled.participantActionId],
-    references: [participantAction.actionId],
+  depositCurrencyAdded: one(depositCurrencyAdded, {
+    fields: [intentSignaled.depositCurrencyAddedId],
+    references: [depositCurrencyAdded.depositCurrencyAddedId],
+  }),
+  depositConversionRateUpdated: one(depositConversionRateUpdated, {
+    fields: [intentSignaled.depositConversionRateUpdatedId],
+    references: [depositConversionRateUpdated.depositConversionRateUpdatedId],
+  }),
+  action: one(action, {
+    fields: [intentSignaled.orderId],
+    references: [action.orderId],
+  }),
+  participant: one(participant, {
+    fields: [intentSignaled.participantId],
+    references: [participant.participantId],
   }),
 }));
 
 export const intentPruned = onchainTable("intentPruned", (t) => ({
   orderId: t.hex().primaryKey(),
+  logId: t.hex().notNull(),
   intentHash: t.hex().notNull(),
   depositId: t.bigint().notNull(),
   transactionId: t.hex().notNull(),
-  participantActionId: t.hex().notNull(),
+  participantId: t.hex().notNull(),
 }));
 
 export const intentPrunedReferences = relations(intentPruned, ({ one }) => ({
@@ -326,9 +430,13 @@ export const intentPrunedReferences = relations(intentPruned, ({ one }) => ({
     fields: [intentPruned.depositId],
     references: [deposit.depositId],
   }),
-  participantAction: one(participantAction, {
-    fields: [intentPruned.participantActionId],
-    references: [participantAction.actionId],
+  action: one(action, {
+    fields: [intentPruned.orderId],
+    references: [action.orderId],
+  }),
+  participant: one(participant, {
+    fields: [intentPruned.participantId],
+    references: [participant.participantId],
   }),
 }));
 
@@ -337,6 +445,7 @@ export const intentFulfilled = onchainTable("intentFulfilled", (t) => ({
   intentHash: t.hex().notNull(),
   depositId: t.bigint().notNull(),
   verifier: t.hex().notNull(),
+  currency: t.hex().notNull(),
   ownerId: t.hex().notNull(),
   to: t.hex().notNull(),
   amount: t.bigint().notNull(),
@@ -344,7 +453,10 @@ export const intentFulfilled = onchainTable("intentFulfilled", (t) => ({
   verifierFee: t.bigint().notNull(),
   transactionId: t.hex().notNull(),
   participantId: t.hex().notNull(),
-  participantActionId: t.hex().notNull(),
+  logId: t.hex().notNull(),
+  depositVerifierAddedId: t.hex().notNull(),
+  depositCurrencyAddedId: t.hex().notNull(),
+  depositConversionRateUpdatedId: t.hex().notNull(),
 }));
 
 export const intentFulfilledReferences = relations(intentFulfilled, ({ one }) => ({
@@ -356,9 +468,9 @@ export const intentFulfilledReferences = relations(intentFulfilled, ({ one }) =>
     fields: [intentFulfilled.depositId],
     references: [deposit.depositId],
   }),
-  participantAction: one(participantAction, {
-    fields: [intentFulfilled.participantActionId],
-    references: [participantAction.actionId],
+  action: one(action, {
+    fields: [intentFulfilled.logId],
+    references: [action.logId],
   }),
   participant: one(participant, {
     fields: [intentFulfilled.participantId],
@@ -367,6 +479,22 @@ export const intentFulfilledReferences = relations(intentFulfilled, ({ one }) =>
   owner: one(participant, {
     fields: [intentFulfilled.ownerId],
     references: [participant.participantId],
+  }),
+  depositCurrencyAdded: one(depositCurrencyAdded, {
+    fields: [intentFulfilled.depositCurrencyAddedId],
+    references: [depositCurrencyAdded.depositCurrencyAddedId],
+  }),
+  depositVerifierAdded: one(depositVerifierAdded, {
+    fields: [intentFulfilled.depositVerifierAddedId],
+    references: [depositVerifierAdded.depositVerifierAddedId],
+  }),
+  depositConversionRateUpdated: one(depositConversionRateUpdated, {
+    fields: [intentFulfilled.depositConversionRateUpdatedId],
+    references: [depositConversionRateUpdated.depositConversionRateUpdatedId],
+  }),
+  depositDelta: one(depositDelta, {
+    fields: [intentFulfilled.logId],
+    references: [depositDelta.logId],
   }),
 }));
 
@@ -434,11 +562,12 @@ export const paymentVerifierRemovedReferences = relations(paymentVerifierRemoved
   }),
 }));
 
-export const stats = onchainTable("stats", (t) => ({
+export const stat = onchainTable("stat", (t) => ({
   orderId: t.hex().primaryKey(), // timestamp truncated to the hour, day, week + action id
   type: t.text().notNull(), // hour, day, week
   action: t.text().notNull(), // deposit / withdrawal
   amount: t.bigint().notNull(), // amount of the currency moved
-  currency: t.hex().notNull(), // currency
+  currency: t.hex(), // currency
+  token: t.hex().notNull(), // token
   verifier: t.hex().notNull(), // verifier
 }));

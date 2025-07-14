@@ -1,18 +1,18 @@
 import { createConfig } from "ponder";
-import { http } from "viem";
 
 import { Escrow } from "./abis/Escrow";
 
 export default createConfig({
-  networks: {
+  chains: {
     base: {
-      chainId: 8453,
-      transport: http(process.env.PONDER_RPC_URL_8453),
+      id: 8453,
+      rpc: process.env.PONDER_RPC_URL_8453,
+      maxRequestsPerSecond: 50,
     },
   },
   contracts: {
     Escrow: {
-      network: "base",
+      chain: 'base',
       abi: Escrow,
       address: "0xca38607d85e8f6294dc10728669605e6664c2d70",
       startBlock: 25303495,
